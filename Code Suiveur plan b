@@ -1,0 +1,93 @@
+#define NUM_SENSORS 8
+
+int sensorPins[NUM_SENSORS] = {A0, A1, A2, A3, A4, A5, A6, A7};
+// =====MOTEURS (L298N)
+int leftPWM =9;
+int rightPWM=10;
+
+int leftDir1 = 3;
+int leftDir2 = 4;
+int rightDir1 = 5;
+int rightDir2 = 6;
+
+// ===== PID
+float Kp= 9.0;
+float Ki=0.5;
+float Kd= 6.0;
+
+float error =0;
+float lastError= 0;
+float integral= 0;
+
+// ===== VITESSE
+int baseSpeed=80;
+int maxSpeed= 140;
+
+void setup() {
+  // --- moteurs
+  pinMode(leftPWM,OUTPUT);
+  pinMode(rightPWM, OUTPUT);
+
+  pinMode(leftDir1, OUTPUT);
+  pinMode(leftDir2,OUTPUT);
+  pinMode(rightDir1,OUTPUT);
+  pinMode(rightDir2,OUTPUT);
+
+  // moteurs en avant
+  digitalWrite(leftDir1, HIGH);
+  digitalWrite(leftDir2, LOW);
+  digitalWrite(rightDir1,HIGH);
+  digitalWrite(rightDir2,LOW);
+
+  delay(5000); // demarrage après 5 secondes
+}
+
+void loop() {
+  long weightedSum =0;
+  long totalValue =0;
+
+  for (int i=0; i<NUM_SENSORS; i++) {
+    int value =analogRead(sensorPins[i]);
+
+    // Inversion noir/blanc
+    value= 1023-value;
+
+    weightedSum +=(long)value*(i * 1000);
+    totalValue +=value;
+  }
+
+  if (totalValue<50) {   // ligne perdue
+    analogWrite(leftPWM, 0);
+    analogWrite(rightPWM, 0);
+    return;
+  }
+
+  int position = weightedSum / totalValue;
+
+  error=position-3500;
+
+  // ===== PID
+  integral += error;
+  integral=constrain(integral,-2000, 2000);
+
+  float derivative =error-lastError;
+
+  float correction = (Kp * error) +
+                     (Ki*integral) +
+                     (Kd*derivative);
+
+  lastError=error;
+
+  // Limiter correction
+  correction=constrain(correction, -80, 80);
+
+  // ===== PRIORITÉ À DROITE =====
+  int leftSpeed =baseSpeed+correction * 1.5;  // moteur gauche + rapide pour tourner à droite
+  int rightSpeed= baseSpeed - correction * 0.5; // moteur droit + lent
+
+  leftSpeed =constrain(leftSpeed, 0, maxSpeed);
+  rightSpeed= constrain(rightSpeed, 0, maxSpeed);
+
+  analogWrite(leftPWM, leftSpeed);
+  analogWrite(rightPWM, rightSpeed);
+}
