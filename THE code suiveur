@@ -1,0 +1,110 @@
+// ==========================================
+// Configuration des broches (à adapter)
+// ==========================================
+// Capteurs analogiques
+const int sensorPins[8] = {A0, A1, A2, A3, A4, A5, A6, A7};
+
+// Moteur Gauche (Moteur A)
+const int ENA=3;  // Vitesse (PWM)
+const int IN1=6;  // Direction 1
+const int IN2=7;  // Direction 2
+
+const int ENB =5;  // Vitesse (PWM)
+const int IN3 =2;  // Direction 1
+const int IN4 =4;  // Direction 2
+
+// ==========================================
+// Paramètres du PID et des moteurs
+// ==========================================
+// /!\ Ces valeurs DOIVENT être ajustées (tunées) pour votre robot
+float Kp =15.0;  // Proportionnel : réagit à l'erreur actuelle
+float Ki =0.0;   // Intégral : réagit à l'accumulation des erreurs (souvent 0 pour un suiveur)
+float Kd =10.0;  // Dérivé : réagit à la vitesse de changement de l'erreur
+
+int baseSpeed =100; // Vitesse de base du robot (0 à 255)
+int maxSpeed= 200;  // Vitesse maximale autorisée
+
+// Variables globales pour le PID
+float previousError=0;
+float integral=0;
+
+void setup() {
+  Serial.begin(9600);
+  
+  // Configuration des broches moteurs
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(ENB, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+
+  // Faire avancer les deux moteurs par défaut
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+
+  // Attente de 5 secondes avant le démarrage
+  Serial.println("Démarrage dans 5 secondes...");
+  delay(5000);
+  Serial.println("Go !");
+}
+
+void loop() {
+  // 1. Lire les capteurs et calculer l'erreur
+  float error = calculatePositionError();
+
+  // 2. Calculer la correction PID
+  float P= error* Kp;
+  integral+= error;
+  float I= integral * Ki;
+  float D= (error - previousError) * Kd;
+  
+  float correction = P + I + D;
+  previousError = error;
+
+  // 3. Appliquer la correction aux vitesses des moteurs
+  int leftSpeed = baseSpeed + correction;
+  int rightSpeed = baseSpeed - correction;
+
+  // 4. Contraindre les vitesses pour ne pas dépasser 255 ou descendre sous 0
+  leftSpeed = constrain(leftSpeed, 0, maxSpeed);
+  rightSpeed = constrain(rightSpeed, 0, maxSpeed);
+
+  // 5. Envoyer les vitesses aux moteurs
+  analogWrite(ENA, leftSpeed);
+  analogWrite(ENB, rightSpeed);
+}
+
+// Fonction pour lire les 8 capteurs et estimer la position de la ligne
+float calculatePositionError() {
+  long weightedSum = 0;
+  long sum = 0;
+  
+  // Poids assignés à chaque capteur de gauche à droite
+  // Le but est d'avoir une erreur de 0 si la ligne est au centre (entre les capteurs centraux)
+  int weights[8] = {-35, -25, -15, -5, 5, 15, 25, 35};
+  
+  for (int i = 0; i < 8; i++) {
+    int sensorValue = analogRead(sensorPins[i]);
+    
+    // Si votre ligne est NOIRE sur fond BLANC, gardez cette logique.
+    // (Si la ligne est BLANCHE sur fond NOIR, inversez la valeur ex: 1023 - sensorValue)
+    
+    // On ignore le bruit (les valeurs trop faibles)
+    if (sensorValue>100) { 
+      weightedSum+=(long)sensorValue * weights[i];
+      sum += sensorValue;
+    }
+  }
+
+  // Si aucun capteur ne voit la ligne, on garde la dernière erreur connue 
+  // pour continuer à tourner dans la bonne direction et retrouver la ligne
+  if (sum==0) {
+    return 0; // On dit qu'il n'y a pas d'erreur, il ira tout droit
+  }
+
+  // Calcule la position moyenne
+  return (float)weightedSum / sum; 
+}
